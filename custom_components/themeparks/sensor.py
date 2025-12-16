@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN, NAME, TIME, ID
+from .const import ATTR_PARK_NAME, DOMAIN, NAME, PARKID, TIME, ID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,14 +51,43 @@ class AttractionSensor(SensorEntity, CoordinatorEntity):
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator)
         self.idx = idx
-        self._attr_name = coordinator.data[idx][NAME]
+        attraction_data = coordinator.data[idx]
+
+        self._attr_name = attraction_data[NAME]
         self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
         self._attr_device_class = SensorDeviceClass.DURATION
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_value = self.coordinator.data[self.idx][TIME]
-        self._attr_unique_id = f"{coordinator.entry_id}_{coordinator.data[idx][ID]}"
+        self._attr_native_value = attraction_data[TIME]
+        self._attr_unique_id = f"{coordinator.entry_id}_{attraction_data[ID]}"
 
-        _LOGGER.debug("Adding AttractionSensor called %s", self._attr_name)
+        # Use parkId for device association
+        park_id = attraction_data.get(PARKID)
+        self._park_name = attraction_data.get(ATTR_PARK_NAME, "Unknown Park")
+
+        if park_id:
+            self._attr_device_info = {
+                "identifiers": {(DOMAIN, park_id)},
+                "name": self._park_name,
+                "manufacturer": "Theme Parks",
+                "model": "Theme Park",
+            }
+        else:
+            # Fallback to entry_id if parkId not available
+            self._attr_device_info = {
+                "identifiers": {(DOMAIN, self.coordinator.entry_id)},
+                "name": self.coordinator.api._parkname,
+                "manufacturer": "Theme Parks",
+                "model": "Wait Times",
+            }
+
+        _LOGGER.debug("Adding AttractionSensor called %s to park %s", self._attr_name, self._park_name)
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        return {
+            ATTR_PARK_NAME: self._park_name,
+        }
 
     @callback
     def _handle_coordinator_update(self) -> None:

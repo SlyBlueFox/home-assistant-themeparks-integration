@@ -10,6 +10,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.httpx_client import get_async_client
 
 from .const import (
+    ATTR_PARK_NAME,
     DOMAIN,
     ENTITY_BASE_URL,
     ENTITY_TYPE,
@@ -18,6 +19,7 @@ from .const import (
     LIVE_DATA,
     METHOD_GET,
     NAME,
+    PARKID,
     PARKNAME,
     PARKSLUG,
     QUEUE,
@@ -76,6 +78,7 @@ class ThemeParkAPI:
         self._config_entry = config_entry
         self._parkslug = config_entry.data[PARKSLUG]
         self._parkname = config_entry.data[PARKNAME]
+        self._park_cache = {}  # Cache park names by parkId
 
     async def async_initialize(self) -> None:
         """Initialize controller and connect radio."""
@@ -86,30 +89,43 @@ class ThemeParkAPI:
         """Do API lookup of the 'live' page of this park."""
         _LOGGER.debug("Running do_live_lookup in ThemeParkAPI")
 
-        items = await self.do_api_lookup()
+        items_data = await self.do_api_lookup()
+
+        # Build park name cache from PARK entities
+        for item in items_data:
+            if item[ENTITY_TYPE] == "PARK":
+                self._park_cache[item[ID]] = item[NAME]
+
+        # Filter to attractions and shows only
+        items = filter(
+            lambda item: item[ENTITY_TYPE] in [TYPE_SHOW, TYPE_ATTRACTION],
+            items_data
+        )
 
         def parse_live(item):
             """Parse live data from API."""
 
             _LOGGER.debug("Parsed API item for: %s", item[NAME])
 
-            name = item[NAME] + " (" + self._parkname + ")"
+            park_id = item.get(PARKID)
+            park_name = self._park_cache.get(park_id, self._parkname)
+            name = item[NAME]
 
-            if "queue" not in item:
-                _LOGGER.debug("No queue in item")
-                return (item[ID], {ID: item[ID], NAME: name, TIME: None})
+            wait_time = None
+            if "queue" in item and "STANDBY" in item[QUEUE]:
+                wait_time = item[QUEUE][STANDBY][WAIT_TIME]
+                _LOGGER.debug("Time found")
+            else:
+                _LOGGER.debug("No queue/STANDBY in item")
 
-            if "STANDBY" not in item[QUEUE]:
-                _LOGGER.debug("No STANDBY in item['queue']")
-                return (item[ID], {ID: item[ID], NAME: name, TIME: None})
-
-            _LOGGER.debug("Time found")
             return (
                 item[ID],
                 {
                     ID: item[ID],
                     NAME: name,
-                    TIME: item[QUEUE][STANDBY][WAIT_TIME],
+                    TIME: wait_time,
+                    PARKID: park_id,
+                    ATTR_PARK_NAME: park_name,
                 },
             )
 
@@ -129,9 +145,5 @@ class ThemeParkAPI:
 
         items_data = response.json()
 
-        def filter_item(item):
-            return (
-                item[ENTITY_TYPE] == TYPE_SHOW or item[ENTITY_TYPE] == TYPE_ATTRACTION
-            )
-
-        return filter(filter_item, items_data[LIVE_DATA])
+        # Return all items so we can extract park information
+        return items_data[LIVE_DATA]
