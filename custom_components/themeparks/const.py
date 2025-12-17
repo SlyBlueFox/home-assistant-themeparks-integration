@@ -34,6 +34,7 @@ OPENING_TIME = "openingTime"
 CLOSING_TIME = "closingTime"
 SCHEDULE_TYPE = "type"
 DATE = "date"
+DESCRIPTION = "description"
 
 # Schedule types
 TYPE_OPERATING = "OPERATING"

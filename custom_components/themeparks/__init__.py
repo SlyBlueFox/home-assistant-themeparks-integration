@@ -19,6 +19,7 @@ from .const import (
     ATTR_ALL_SCHEDULES,
     CLOSING_TIME,
     DATE,
+    DESCRIPTION,
     DOMAIN,
     ENTITY_BASE_URL,
     ENTITY_TYPE,
@@ -242,7 +243,7 @@ class ThemeParkAPI:
             if entry.get(DATE) == today_str and OPENING_TIME in entry and CLOSING_TIME in entry:
                 schedule_dict = {
                     "type": entry.get(SCHEDULE_TYPE, "UNKNOWN"),
-                    "name": entry.get(NAME),  # Event name (e.g., "Jollywood Nights")
+                    "name": entry.get(DESCRIPTION),  # Event name (e.g., "Early Entry", "Jollywood Nights")
                     "opening_time": entry.get(OPENING_TIME),
                     "closing_time": entry.get(CLOSING_TIME),
                 }
