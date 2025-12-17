@@ -27,5 +27,27 @@ STANDBY = "STANDBY"
 WAIT_TIME = "waitTime"
 LIVE = "live"
 
+# Schedule constants
+SCHEDULE = "schedule"
+SCHEDULE_DATA = "schedule"
+OPENING_TIME = "openingTime"
+CLOSING_TIME = "closingTime"
+SCHEDULE_TYPE = "type"
+DATE = "date"
+
+# Schedule types
+TYPE_OPERATING = "OPERATING"
+TYPE_TICKETED_EVENT = "TICKETED_EVENT"
+TYPE_PRIVATE_EVENT = "PRIVATE_EVENT"
+TYPE_EXTRA_HOURS = "EXTRA_HOURS"
+TYPE_INFO = "INFO"
+
+# Park status attributes
+ATTR_PARK_STATUS = "park_status"
+ATTR_OPENING_TIME = "opening_time"
+ATTR_CLOSING_TIME = "closing_time"
+ATTR_SCHEDULE_TYPE = "schedule_type"
+ATTR_ALL_SCHEDULES = "all_schedules"
+
 STEP_USER = "user"
 METHOD_GET = "GET"
