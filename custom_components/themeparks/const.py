@@ -34,6 +34,7 @@ OPENING_TIME = "openingTime"
 CLOSING_TIME = "closingTime"
 SCHEDULE_TYPE = "type"
 DATE = "date"
+DESCRIPTION = "description"
 
 # Schedule types
 TYPE_OPERATING = "OPERATING"
@@ -47,6 +48,7 @@ ATTR_PARK_STATUS = "park_status"
 ATTR_OPENING_TIME = "opening_time"
 ATTR_CLOSING_TIME = "closing_time"
 ATTR_SCHEDULE_TYPE = "schedule_type"
+ATTR_ALL_SCHEDULES = "all_schedules"
 
 STEP_USER = "user"
 METHOD_GET = "GET"

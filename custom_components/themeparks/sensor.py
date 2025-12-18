@@ -24,6 +24,7 @@ from .const import (
     ATTR_OPENING_TIME,
     ATTR_CLOSING_TIME,
     ATTR_SCHEDULE_TYPE,
+    ATTR_ALL_SCHEDULES,
     DOMAIN,
     NAME,
     PARKID,
@@ -185,6 +186,7 @@ class ParkSensor(SensorEntity, CoordinatorEntity):
             ATTR_OPENING_TIME: park_data.get(ATTR_OPENING_TIME),
             ATTR_CLOSING_TIME: park_data.get(ATTR_CLOSING_TIME),
             ATTR_SCHEDULE_TYPE: park_data.get(ATTR_SCHEDULE_TYPE),
+            ATTR_ALL_SCHEDULES: park_data.get(ATTR_ALL_SCHEDULES, []),
         }
 
     @callback
