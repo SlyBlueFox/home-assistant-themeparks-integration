@@ -120,27 +120,15 @@ class AttractionSensor(SensorEntity, CoordinatorEntity):
 
         _LOGGER.debug("Adding AttractionSensor called %s to park %s", self._attr_name, self._park_name)
 
-    @staticmethod
-    def _format_minutes(value):
-        """Format a minute value to match HA's duration display (e.g. 1h 30m)."""
-        if value is None:
-            return None
-        minutes = int(value)
-        if minutes >= 60:
-            hours = minutes // 60
-            remaining = minutes % 60
-            return f"{hours}h {remaining}m" if remaining else f"{hours}h"
-        return f"{minutes}m"
-
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
         attraction_data = self.coordinator.data.get(self.idx, {})
         return {
             ATTR_PARK_NAME: self._park_name,
-            ATTR_7D_AVERAGE: self._format_minutes(attraction_data.get(ATTR_7D_AVERAGE)),
-            ATTR_7D_MINIMUM: self._format_minutes(attraction_data.get(ATTR_7D_MINIMUM)),
-            ATTR_7D_MAXIMUM: self._format_minutes(attraction_data.get(ATTR_7D_MAXIMUM)),
+            ATTR_7D_AVERAGE: attraction_data.get(ATTR_7D_AVERAGE),
+            ATTR_7D_MINIMUM: attraction_data.get(ATTR_7D_MINIMUM),
+            ATTR_7D_MAXIMUM: attraction_data.get(ATTR_7D_MAXIMUM),
         }
 
     @callback
