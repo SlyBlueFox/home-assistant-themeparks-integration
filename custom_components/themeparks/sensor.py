@@ -122,10 +122,15 @@ class AttractionSensor(SensorEntity, CoordinatorEntity):
 
     @staticmethod
     def _format_minutes(value):
-        """Format a minute value with the unit string."""
+        """Format a minute value to match HA's duration display (e.g. 1h 30m)."""
         if value is None:
             return None
-        return f"{value} {UnitOfTime.MINUTES}"
+        minutes = int(value)
+        if minutes >= 60:
+            hours = minutes // 60
+            remaining = minutes % 60
+            return f"{hours}h {remaining}m" if remaining else f"{hours}h"
+        return f"{minutes}m"
 
     @property
     def extra_state_attributes(self):
@@ -227,7 +232,7 @@ class ThemeParksCoordinator(DataUpdateCoordinator):
             if not waits:
                 continue
             self._stats[attraction_id] = {
-                ATTR_7D_AVERAGE: round(sum(waits) / len(waits), 1),
+                ATTR_7D_AVERAGE: round(sum(waits) / len(waits)),
                 ATTR_7D_MINIMUM: min(waits),
                 ATTR_7D_MAXIMUM: max(waits),
             }
