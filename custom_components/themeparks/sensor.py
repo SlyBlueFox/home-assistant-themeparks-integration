@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import time
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -13,12 +14,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
 
 from .const import (
+    ATTR_7D_AVERAGE,
+    ATTR_7D_MAXIMUM,
+    ATTR_7D_MINIMUM,
     ATTR_PARK_NAME,
     ATTR_PARK_STATUS,
     ATTR_OPENING_TIME,
@@ -26,8 +31,11 @@ from .const import (
     ATTR_SCHEDULE_TYPE,
     ATTR_ALL_SCHEDULES,
     DOMAIN,
+    HISTORY_DAYS,
     NAME,
     PARKID,
+    STORAGE_KEY,
+    STORAGE_VERSION,
     TIME,
     ID,
 )
@@ -115,8 +123,12 @@ class AttractionSensor(SensorEntity, CoordinatorEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes."""
+        attraction_data = self.coordinator.data.get(self.idx, {})
         return {
             ATTR_PARK_NAME: self._park_name,
+            ATTR_7D_AVERAGE: attraction_data.get(ATTR_7D_AVERAGE),
+            ATTR_7D_MINIMUM: attraction_data.get(ATTR_7D_MINIMUM),
+            ATTR_7D_MAXIMUM: attraction_data.get(ATTR_7D_MAXIMUM),
         }
 
     @callback
@@ -145,11 +157,73 @@ class ThemeParksCoordinator(DataUpdateCoordinator):
         )
         self.api = api
         self.entry_id = entry_id
+        self._store = Store(
+            hass, STORAGE_VERSION, f"{STORAGE_KEY}_{entry_id}"
+        )
+        self._history: dict[str, list[list]] = {}
+        self._stats: dict[str, dict] = {}
+
+    async def _async_load_history(self):
+        """Load wait time history from persistent storage."""
+        stored = await self._store.async_load()
+        if stored and isinstance(stored, dict):
+            self._history = stored
+        _LOGGER.debug(
+            "Loaded wait history for %s attractions", len(self._history)
+        )
 
     async def _async_update_data(self):
         """Fetch data from API endpoint."""
         _LOGGER.debug("Calling do_live_lookup in ThemeParksCoordinator")
-        return await self.api.do_live_lookup()
+
+        if not self._history:
+            await self._async_load_history()
+
+        data = await self.api.do_live_lookup()
+
+        now = time.time()
+        cutoff = now - (HISTORY_DAYS * 86400)
+
+        for attraction_id, attraction_data in data.items():
+            wait = attraction_data[TIME]
+            if wait is None:
+                continue
+
+            history = self._history.setdefault(attraction_id, [])
+            history.append([now, wait])
+
+        for attraction_id in list(self._history):
+            self._history[attraction_id] = [
+                entry for entry in self._history[attraction_id]
+                if entry[0] >= cutoff
+            ]
+            if not self._history[attraction_id]:
+                del self._history[attraction_id]
+
+        self._compute_stats()
+
+        self.hass.async_create_task(self._store.async_save(self._history))
+
+        for attraction_id, attraction_data in data.items():
+            stats = self._stats.get(attraction_id, {})
+            attraction_data[ATTR_7D_AVERAGE] = stats.get(ATTR_7D_AVERAGE)
+            attraction_data[ATTR_7D_MINIMUM] = stats.get(ATTR_7D_MINIMUM)
+            attraction_data[ATTR_7D_MAXIMUM] = stats.get(ATTR_7D_MAXIMUM)
+
+        return data
+
+    def _compute_stats(self):
+        """Compute 7-day average, min, and max for all attractions."""
+        self._stats = {}
+        for attraction_id, history in self._history.items():
+            waits = [entry[1] for entry in history]
+            if not waits:
+                continue
+            self._stats[attraction_id] = {
+                ATTR_7D_AVERAGE: round(sum(waits) / len(waits), 1),
+                ATTR_7D_MINIMUM: min(waits),
+                ATTR_7D_MAXIMUM: max(waits),
+            }
 
 
 class ParkSensor(SensorEntity, CoordinatorEntity):

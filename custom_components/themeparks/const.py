@@ -50,5 +50,13 @@ ATTR_CLOSING_TIME = "closing_time"
 ATTR_SCHEDULE_TYPE = "schedule_type"
 ATTR_ALL_SCHEDULES = "all_schedules"
 
+ATTR_7D_AVERAGE = "7d_average_wait"
+ATTR_7D_MINIMUM = "7d_minimum_wait"
+ATTR_7D_MAXIMUM = "7d_maximum_wait"
+
+STORAGE_KEY = "themeparks_wait_history"
+STORAGE_VERSION = 1
+HISTORY_DAYS = 7
+
 STEP_USER = "user"
 METHOD_GET = "GET"
