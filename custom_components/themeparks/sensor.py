@@ -162,12 +162,14 @@ class ThemeParksCoordinator(DataUpdateCoordinator):
         )
         self._history: dict[str, list[list]] = {}
         self._stats: dict[str, dict] = {}
+        self._history_loaded = False
 
     async def _async_load_history(self):
         """Load wait time history from persistent storage."""
         stored = await self._store.async_load()
         if stored and isinstance(stored, dict):
             self._history = stored
+        self._history_loaded = True
         _LOGGER.debug(
             "Loaded wait history for %s attractions", len(self._history)
         )
@@ -176,7 +178,7 @@ class ThemeParksCoordinator(DataUpdateCoordinator):
         """Fetch data from API endpoint."""
         _LOGGER.debug("Calling do_live_lookup in ThemeParksCoordinator")
 
-        if not self._history:
+        if not self._history_loaded:
             await self._async_load_history()
 
         data = await self.api.do_live_lookup()
