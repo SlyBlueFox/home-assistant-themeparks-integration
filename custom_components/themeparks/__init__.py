@@ -20,6 +20,8 @@ from .const import (
     CLOSING_TIME,
     DATE,
     DESCRIPTION,
+    DESTINATIONS,
+    DESTINATIONS_URL,
     DOMAIN,
     ENTITY_BASE_URL,
     ENTITY_TYPE,
@@ -36,6 +38,7 @@ from .const import (
     SCHEDULE,
     SCHEDULE_DATA,
     SCHEDULE_TYPE,
+    SLUG,
     STANDBY,
     TIME,
     TYPE_ATTRACTION,
@@ -49,6 +52,10 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+
+class ThemeParksAPIError(Exception):
+    """Raised when the themeparks.wiki API returns an unexpected response."""
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -112,6 +119,17 @@ class ThemeParkAPI:
             if item[ENTITY_TYPE] == "PARK":
                 self._park_cache[item[ID]] = item[NAME]
 
+        # Some destinations (e.g. Universal Orlando Resort) do not include
+        # PARK entities in their /live response. Backfill the cache from the
+        # destinations list so attraction park_name attributes are populated.
+        if any(
+            item.get(PARKID) and item[PARKID] not in self._park_cache
+            for item in items_data
+            if item.get(ENTITY_TYPE) in (TYPE_SHOW, TYPE_ATTRACTION)
+        ):
+            for park in await self._get_destination_parks():
+                self._park_cache.setdefault(park[ID], park[NAME])
+
         # Filter to attractions and shows only
         items = filter(
             lambda item: item[ENTITY_TYPE] in [TYPE_SHOW, TYPE_ATTRACTION],
@@ -149,20 +167,129 @@ class ThemeParkAPI:
 
     async def do_api_lookup(self):
         """Lookup the subpage and subfield in the API."""
-        url = f"{ENTITY_BASE_URL}/{self._parkslug}/{LIVE}"
+        items_data = await self._fetch_live(self._parkslug)
 
-        client = get_async_client(self._hass)
-        response = await client.request(
-            METHOD_GET,
-            url,
-            timeout=30,
-            follow_redirects=True,
-        )
+        if items_data is None or LIVE_DATA not in items_data:
+            # Stored slug is no longer valid (themeparks.wiki occasionally
+            # renames destination slugs, e.g. universalorlando ->
+            # universalresort_orlando). Try to recover by looking up the
+            # current slug by park name.
+            _LOGGER.warning(
+                "Live data not found for slug '%s'; attempting to resolve "
+                "current slug for park '%s'",
+                self._parkslug,
+                self._parkname,
+            )
+            new_slug = await self._resolve_current_slug()
+            if new_slug and new_slug != self._parkslug:
+                _LOGGER.info(
+                    "Updating park slug for '%s' from '%s' to '%s'",
+                    self._parkname,
+                    self._parkslug,
+                    new_slug,
+                )
+                self._parkslug = new_slug
+                self._hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    data={**self._config_entry.data, PARKSLUG: new_slug},
+                )
+                items_data = await self._fetch_live(new_slug)
 
-        items_data = response.json()
+        if items_data is None or LIVE_DATA not in items_data:
+            raise ThemeParksAPIError(
+                f"API response for '{self._parkslug}' did not contain "
+                f"'{LIVE_DATA}'. The destination slug may be invalid or the "
+                "themeparks.wiki API is unavailable."
+            )
 
-        # Return all items so we can extract park information
         return items_data[LIVE_DATA]
+
+    async def _fetch_live(self, slug: str):
+        """Fetch the /live endpoint for a slug, returning None on HTTP error."""
+        url = f"{ENTITY_BASE_URL}/{slug}/{LIVE}"
+        client = get_async_client(self._hass)
+        try:
+            response = await client.request(
+                METHOD_GET,
+                url,
+                timeout=30,
+                follow_redirects=True,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Error requesting %s: %s", url, err)
+            return None
+
+        if response.status_code != 200:
+            _LOGGER.error(
+                "Unexpected status %s fetching %s",
+                response.status_code,
+                url,
+            )
+            return None
+
+        try:
+            return response.json()
+        except ValueError as err:
+            _LOGGER.error("Invalid JSON from %s: %s", url, err)
+            return None
+
+    async def _resolve_current_slug(self) -> str | None:
+        """Look up the current slug for the configured park name."""
+        destination = await self._get_destination()
+        if destination and destination.get(SLUG):
+            return destination[SLUG]
+        return None
+
+    async def _get_destination_parks(self) -> list[dict]:
+        """Return parks (id + name) for the configured destination."""
+        destination = await self._get_destination()
+        if not destination:
+            return []
+        return [
+            {ID: park[ID], NAME: park[NAME]}
+            for park in destination.get("parks", [])
+            if park.get(ID) and park.get(NAME)
+        ]
+
+    async def _get_destination(self) -> dict | None:
+        """Return the destinations-list entry matching this config entry."""
+        client = get_async_client(self._hass)
+        try:
+            response = await client.request(
+                METHOD_GET,
+                DESTINATIONS_URL,
+                timeout=10,
+                follow_redirects=True,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Error fetching destinations list: %s", err)
+            return None
+
+        if response.status_code != 200:
+            _LOGGER.error(
+                "Unexpected status %s fetching destinations list",
+                response.status_code,
+            )
+            return None
+
+        try:
+            payload = response.json()
+        except ValueError as err:
+            _LOGGER.error("Invalid JSON from destinations list: %s", err)
+            return None
+
+        # Prefer a slug match (resilient to destination renames); fall back
+        # to a name match so slug migrations still work.
+        by_slug = None
+        by_name = None
+        for dest in payload.get(DESTINATIONS, []):
+            if dest.get(SLUG) == self._parkslug:
+                by_slug = dest
+                break
+            if dest.get(NAME) == self._parkname:
+                by_name = dest
+
+        return by_slug or by_name
 
     async def do_schedule_lookup(self):
         """Fetch schedule data for parks."""
@@ -172,7 +299,16 @@ class ThemeParkAPI:
         park_schedules = {}
 
         # Get all park entities
-        parks = [item for item in items_data if item[ENTITY_TYPE] == "PARK"]
+        parks = [
+            {ID: item[ID], NAME: item[NAME]}
+            for item in items_data
+            if item.get(ENTITY_TYPE) == "PARK"
+        ]
+
+        # Fall back to the destinations list when /live has no PARK entries
+        # (e.g. Universal Orlando Resort).
+        if not parks:
+            parks = await self._get_destination_parks()
 
         for park in parks:
             park_id = park[ID]

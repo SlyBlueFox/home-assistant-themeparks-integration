@@ -18,8 +18,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
+    UpdateFailed,
 )
 
+from . import ThemeParksAPIError
 from .const import (
     ATTR_7D_AVERAGE,
     ATTR_7D_MAXIMUM,
@@ -181,7 +183,10 @@ class ThemeParksCoordinator(DataUpdateCoordinator):
         if not self._history_loaded:
             await self._async_load_history()
 
-        data = await self.api.do_live_lookup()
+        try:
+            data = await self.api.do_live_lookup()
+        except ThemeParksAPIError as err:
+            raise UpdateFailed(str(err)) from err
 
         now = time.time()
         cutoff = now - (HISTORY_DAYS * 86400)
@@ -296,4 +301,7 @@ class ParkScheduleCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Fetch data from API endpoint."""
         _LOGGER.debug("Calling do_schedule_lookup in ParkScheduleCoordinator")
-        return await self.api.do_schedule_lookup()
+        try:
+            return await self.api.do_schedule_lookup()
+        except ThemeParksAPIError as err:
+            raise UpdateFailed(str(err)) from err
